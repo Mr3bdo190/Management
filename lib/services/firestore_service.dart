@@ -1,74 +1,58 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../models/client_model.dart';
 import '../models/invoice_model.dart';
 
 class FirestoreService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  // قاعدة بيانات وهمية في الذاكرة المؤقتة لاختبار التصميم والعمليات
+  static final List<Client> _clients = [];
+  static final List<Invoice> _invoices = [];
 
-  FirestoreService() {
-    // تفعيل الكاش المحلي للعمل أوفلاين ومزامنة الداتا تلقائياً فور الاتصال
-    _db.settings = const Settings(
-      persistenceEnabled: true,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
-  }
+  final _clientsController = StreamController<List<Client>>.broadcast();
+  final _invoicesController = StreamController<List<Invoice>>.broadcast();
 
-  // === عمليات العملاء والموردين ===
-
-  // إضافة أو تعديل عميل/مورد
+  // حفظ عميل جديد
   Future<void> saveClient(Client client) async {
-    await _db.collection('clients').doc(client.id).set(client.toMap());
+    _clients.add(client);
+    _clientsController.add(_clients);
   }
 
-  // جلب قائمة العملاء أو الموردين حسب النوع (Real-time)
-  Stream<List<Client>> getClientsAndSuppliers(String type) {
-    return _db
-        .collection('clients')
-        .where('type', isEqualTo: type)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Client.fromMap(doc.data())).toList());
+  // جلب العملاء
+  Stream<List<Client>> getClientsAndSuppliers(String type) async* {
+    yield _clients.where((c) => c.type == type).toList();
+    yield* _clientsController.stream.map((list) => list.where((c) => c.type == type).toList());
   }
 
-  // === عمليات الفواتير والعمليات المركبة ===
-
-  // حفظ فاتورة وتحديث مديونية العميل في نفس الوقت
+  // حفظ فاتورة وتحديث الحسابات
   Future<void> saveInvoice(Invoice invoice) async {
-    final batch = _db.batch();
-
-    // 1. مرجع الفاتورة الجديدة
-    final invoiceRef = _db.collection('invoices').doc(invoice.id);
-    batch.set(invoiceRef, invoice.toMap());
-
-    // 2. مرجع حساب العميل لتحديث رصيده الحالي بالباقي من الفاتورة
-    final clientRef = _db.collection('clients').doc(invoice.clientId);
+    _invoices.add(invoice);
     
-    batch.update(clientRef, {
-      'currentBalance': FieldValue.increment(invoice.remainingAmount),
-    });
-
-    // تنفيذ العمليتين معاً لحماية البيانات من التضارب
-    await batch.commit();
+    final index = _clients.indexWhere((c) => c.id == invoice.clientId);
+    if (index != -1) {
+      final old = _clients[index];
+      _clients[index] = Client(
+        id: old.id,
+        name: old.name,
+        phone: old.phone,
+        address: old.address,
+        type: old.type,
+        initialBalance: old.initialBalance,
+        currentBalance: old.currentBalance + invoice.remainingAmount,
+      );
+    }
+    
+    _invoicesController.add(_invoices);
+    _clientsController.add(_clients);
   }
 
-  // جلب فواتير عميل محدد لكشف الحساب
-  Stream<List<Invoice>> getClientInvoices(String clientId) {
-    return _db
-        .collection('invoices')
-        .where('clientId', isEqualTo: clientId)
-        .orderBy('date', descending: true)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Invoice.fromMap(doc.data())).toList());
+  // جلب فواتير عميل
+  Stream<List<Invoice>> getClientInvoices(String clientId) async* {
+    yield _invoices.where((i) => i.clientId == clientId).toList();
+    yield* _invoicesController.stream.map((list) => list.where((i) => i.clientId == clientId).toList());
   }
 
-  // جلب كل فواتير المصنع للدفتر العام
-  Stream<List<Invoice>> getAllInvoices() {
-    return _db
-        .collection('invoices')
-        .orderBy('date', descending: true)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Invoice.fromMap(doc.data())).toList());
+  // جلب كل الفواتير للدفتر
+  Stream<List<Invoice>> getAllInvoices() async* {
+    yield _invoices.toList();
+    yield* _invoicesController.stream;
   }
 }
