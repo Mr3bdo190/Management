@@ -27,8 +27,10 @@ jobs:
         channel: 'stable'
 
     - name: Initialize Flutter Project
-      # هنا التعديل: ضفنا اسم المشروع بشكل صريح بحروف صغيرة
       run: flutter create --org com.factory --project-name factory_manager .
+
+    - name: Fix minSdkVersion for Firebase
+      run: sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle
 
     - name: Install Dependencies
       run: flutter pub get
