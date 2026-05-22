@@ -27,7 +27,8 @@ jobs:
         channel: 'stable'
 
     - name: Initialize Flutter Project
-      run: flutter create --org com.factory .
+      # هنا التعديل: ضفنا اسم المشروع بشكل صريح بحروف صغيرة
+      run: flutter create --org com.factory --project-name factory_manager .
 
     - name: Install Dependencies
       run: flutter pub get
